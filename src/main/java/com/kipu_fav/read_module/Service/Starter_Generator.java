@@ -188,7 +188,7 @@ public  class Starter_Generator {
             calendar.setTime(startTime);
             for (List<String> offTimeChunk : offTimes){
                 Date off_time_start = sdf.parse(offTimeChunk.get(0));
-                Date off_time_end = sdf.parse(offTimeChunk.get(0));
+                Date off_time_end = sdf.parse(offTimeChunk.get(1    ));
 
                 Date chunkStartTime = calendar.getTime();
                 calendar.setTime(off_time_start);
@@ -201,6 +201,14 @@ public  class Starter_Generator {
                 calendar.add(Calendar.MINUTE,1);
                 timeChunks.add(entry);
             }
+
+            Date chunkStartTime = calendar.getTime();
+            calendar.setTime(endTime);
+            Date chunkEndTime = calendar.getTime();
+            List<String> entry = new ArrayList<>();
+            entry.add(sdf.format(chunkStartTime));
+            entry.add(sdf.format(chunkEndTime));
+            timeChunks.add(entry);
 
         } catch (ParseException e) {
             e.printStackTrace();

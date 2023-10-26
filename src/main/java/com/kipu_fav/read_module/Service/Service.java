@@ -3,10 +3,7 @@ package com.kipu_fav.read_module.Service;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.kipu_fav.read_module.Entity.RedisResponse;
-import com.kipu_fav.read_module.Entity.Schedule;
-import com.kipu_fav.read_module.Entity.Schedule_request;
-import com.kipu_fav.read_module.Entity.UserQuery;
+import com.kipu_fav.read_module.Entity.*;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.catalina.User;
@@ -18,10 +15,13 @@ import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.http.ResponseEntity;
+import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.util.FileCopyUtils;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,6 +36,8 @@ import com.kipu_fav.read_module.Service.Starter_Generator;
 public class Service {
 
     public static final String HASH_KEY = "KIPU_SCHEDULES";
+    private final String BOOKING_KAFKA_TOPIC = "booking-kafka-topic";
+
 
     @Autowired
     private RedisTemplate template;
@@ -62,16 +64,13 @@ public class Service {
             List<Schedule> scheduleEntries = Starter_Generator.generateEntries(scheduleRequest.getResource_name(),scheduleRequest.getLocation_name(),scheduleRequest.getStart_date().toString(),scheduleRequest.getEnd_date().toString(),scheduleRequest.getStart_time().toString(),scheduleRequest.getEnd_time().toString(),scheduleRequest.getOff_days(),scheduleRequest.getOff_times());
             for (Schedule schedule : scheduleEntries) {
 //                log.info(schedule.toString());
-                zSetOperations.add(HASH_KEY, schedule, calculateScore(schedule));
+                zSetOperations.add(HASH_KEY, schedule, calculateScore(schedule.getDate(),schedule.getResource_name(),schedule.getLocation_name()));
             }
         }
     }
 
 
-    private double calculateScore(Schedule schedule) {
-        String dateString = schedule.getDate(); // Date in "yyyy-MM-dd" format
-        String resourceName = schedule.getResource_name();
-        String locationName = schedule.getLocation_name();
+    private double calculateScore(String dateString , String resourceName , String locationName) {
 
         // Convert the date to a Unix timestamp (milliseconds)
         long dateTimestamp;
@@ -96,7 +95,7 @@ public class Service {
     }
 
      public List<RedisResponse> querySlots(UserQuery query) throws IOException {
-         String luaScript = new String(Files.readAllBytes(Path.of("C:\\Users\\jatin\\Desktop\\FAV\\read_module\\src\\main\\java\\com\\kipu_fav\\read_module\\scripts\\filter_entries.lua")));
+         String luaScript = new String(Files.readAllBytes(Path.of("C:\\Users\\hp\\Desktop\\Fav_kipu\\Fav_demo_read\\src\\main\\java\\com\\kipu_fav\\read_module\\scripts\\filter_entries.lua")));
 
          RedisScript<String> script = new DefaultRedisScript<>(luaScript, String.class);
 
@@ -113,5 +112,21 @@ public class Service {
          log.info(schedules.toString());
          return schedules;
     }
+    @KafkaListener(topics = BOOKING_KAFKA_TOPIC,groupId = "booking-kafka-consumer-group",properties = {"spring.json.value.default.type=com.kipu_fav.read_module.Entity.Booking"})
+    public void bookingSync(Booking booking) throws IOException {
+        String luaScript = new String(Files.readAllBytes(Path.of("C:\\Users\\hp\\Desktop\\Fav_kipu\\Fav_demo_read\\src\\main\\java\\com\\kipu_fav\\read_module\\scripts\\booking.lua")));
+
+        RedisScript<String> script = new DefaultRedisScript<>(luaScript, String.class);
+
+        String[] keys = {HASH_KEY};
+        log.info(booking.toString());
+
+        double score = calculateScore(booking.getDate(),booking.getResource_name(),booking.getLocation_name());
+        BigInteger scoreInteger = new BigDecimal(String.valueOf(score)).toBigInteger();
+        Object result =  template.execute(script, Collections.singletonList(HASH_KEY),booking.getId_redis(),booking,scoreInteger);
+        assert result != null;
+//        log.info(result.toString());
+    }
+
 
 }
